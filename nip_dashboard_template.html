@@ -351,10 +351,10 @@ const ext=(id,html)=>{let d=document.createElement('section');d.className='nip-b
 const quick=ext('nipQuick','<h2>Filtros rápidos de situação operacional</h2><div class="nip-enhance-bar" id="nipQuickBtns"></div><p class="nip-mini" id="nipQuickInfo">Os atalhos apenas refinam a visualização; não alteram os critérios de elegibilidade.</p>');
 panels[0].insertBefore(quick,panels[0].querySelector('.content'));
 let quickMode='';
-const quickModes=[['','Todas'],['late','Acima de 10 dias'],['soon','Vencem em 72h'],['priority','Prioritárias'],['nostaff','Sem levantador'],['nocoord','Sem coordenadas']];
+const quickModes=[['','Todas'],['late','Acima de 10 dias'],['soon','Vencem em 72h'],['priority','Prioritárias'],['nostaff','Sem levantador'],['nocoord','Sem coordenadas'],['duplicates','Obras duplicadas']];
 const quickBar=$n('nipQuickBtns');quickBar.innerHTML=quickModes.map(([k,label])=>`<button type="button" data-quick="${k}">${label}</button>`).join('');
 const oldGlobalRender=render;
-function quickMatch(r){if(!quickMode)return true;let d=agParse(r['DATA DESPACHO']),days=d===null?null:agDays(d),pr=normalStatus(r.PRIORIDADE);switch(quickMode){case 'late':return !!workloadStatus(r)&&days!==null&&days>10;case 'soon':return !!workloadStatus(r)&&days!==null&&days>=7&&days<=10;case 'priority':return !!pr&&pr!=='0'&&pr!=='NORMAL'&&pr!=='BAIXA';case 'nostaff':return !val(r,'LEVANTADOR')||normalStatus(r.LEVANTADOR)==='SEM LEVANTADOR';case 'nocoord':return !coord(r)||!MARANHAO_BOUNDS.contains(coord(r));default:return true}}
+function quickMatch(r){if(!quickMode)return true;let d=agParse(r['DATA DESPACHO']),days=d===null?null:agDays(d),pr=normalStatus(r.PRIORIDADE);switch(quickMode){case 'late':return !!workloadStatus(r)&&days!==null&&days>10;case 'soon':return !!workloadStatus(r)&&days!==null&&days>=7&&days<=10;case 'priority':return !!pr&&pr!=='0'&&pr!=='NORMAL'&&pr!=='BAIXA';case 'nostaff':return !val(r,'LEVANTADOR')||normalStatus(r.LEVANTADOR)==='SEM LEVANTADOR';case 'nocoord':return !coord(r)||!MARANHAO_BOUNDS.contains(coord(r));case 'duplicates':return r.BASE_DUPLICADA===true;default:return true}}
 // Refine DATA temporarily only while the established render function executes.
 // All original filters and counters remain owned by the original implementation.
 // The quick filter and map options operate on the same source records.
