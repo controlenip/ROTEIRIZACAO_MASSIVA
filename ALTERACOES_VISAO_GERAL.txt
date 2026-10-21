@@ -1,0 +1,1 @@
+ALTERACOES MINIMAS\n1. app_nip.py: registra apenas a pagina Visao Geral.\n2. nip_dashboard_template.html: esconde somente os botoes das demais abas.\nTodos os demais arquivos e a estrutura original foram mantidos.\n
