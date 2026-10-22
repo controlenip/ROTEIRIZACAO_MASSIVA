@@ -700,7 +700,7 @@ window.addEventListener('load', function(){
   if(btn) btn.click();
 }, {once:true});
 </script>"""
-        return html.replace('</body>', js+'</body>', 1)
+        return html[:html.rfind('</body>')] + js + html[html.rfind('</body>'):]
     # The default route uses the untouched original tab selection.
     if page_id == 'geral':
         return html
@@ -720,4 +720,4 @@ window.addEventListener('load', function(){
   }
 }, {once:true});
 </script>""".replace('__TAB__', tab)
-    return html.replace('</body>', js+'</body>', 1)
+    return html[:html.rfind('</body>')] + js + html[html.rfind('</body>'):]

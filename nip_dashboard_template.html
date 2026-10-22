@@ -341,126 +341,7 @@ $n('nipPdf').onclick=()=>{let r=reportData(),w=window.open('','_blank');if(!w){a
  for(const id of ['reset','nipClearMap'])document.getElementById(id)?.addEventListener('click',()=>{document.getElementById('nipStaffTeamFilter').value='all';document.getElementById('nipStaffMapFilter').value='all';draw()});
  draw();
 })();
-<\/script>
-<style id="nip-duplicadas-aba-estilos">
-/* Estilos limitados exclusivamente a nova aba. O restante do layout nao muda. */
-#nipNav button[data-duplicate-tab="1"]{display:inline-flex!important;align-items:center}
-#nip-tab-duplicadas .nd-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-#nip-tab-duplicadas .nd-head h2{margin:0}
-#nip-tab-duplicadas .nd-kpis{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:9px;margin:12px 0}
-#nip-tab-duplicadas .nd-kpi{background:white;border-radius:6px;padding:12px;border-bottom:3px solid #087b89}
-#nip-tab-duplicadas .nd-kpi small{display:block;color:#577085;font-size:11px}
-#nip-tab-duplicadas .nd-kpi strong{font-size:22px;color:#123a55}
-#nip-tab-duplicadas .nd-filters{display:grid;grid-template-columns:repeat(3,minmax(170px,1fr));gap:10px;margin:14px 0}
-#nip-tab-duplicadas .nd-filters label{font-size:12px;font-weight:600;color:#173c54}
-#nip-tab-duplicadas .nd-filters input,#nip-tab-duplicadas .nd-filters select{display:block;width:100%;margin-top:4px;padding:8px;background:white;border:1px solid #b6cddd;border-radius:5px;color:#163951}
-#nip-tab-duplicadas .nd-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:10px 0}
-#nip-tab-duplicadas .nd-actions button{background:#08788a;color:white;border:0;border-radius:5px;padding:9px 13px;cursor:pointer}
-#nip-tab-duplicadas .nd-actions button.nd-secondary{background:#eff6f9;color:#153e59;border:1px solid #b4cbd9}
-#nip-tab-duplicadas .nd-scroll{overflow:auto;max-height:610px;background:white;border:1px solid #d2e1ea;border-radius:7px}
-#nip-tab-duplicadas table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
-#nip-tab-duplicadas th{position:sticky;top:0;background:#e9f2f7;color:#183e57;text-align:left;padding:10px;z-index:1}
-#nip-tab-duplicadas td{padding:9px 10px;border-top:1px solid #e4edf2;color:#183d56}
-#nip-tab-duplicadas tr:nth-child(even){background:#f7fafc}
-#nip-tab-duplicadas .nd-note{font-size:12px;color:#526f80}
-#nip-tab-duplicadas .nd-pill{border-radius:12px;padding:3px 8px;background:#e5f4f7;color:#0a6472;font-weight:700}
-@media(max-width:850px){#nip-tab-duplicadas .nd-filters{grid-template-columns:repeat(2,minmax(120px,1fr))}#nip-tab-duplicadas .nd-kpis{grid-template-columns:repeat(2,minmax(120px,1fr))}}
-</style>
-<script id="nip-duplicadas-aba-logica">
-(function(){
-'use strict';
-const nav=document.getElementById('nipNav'), main=document.querySelector('main');
-if(!nav||!main)return;
-const b=document.createElement('button');
-b.type='button';b.textContent='Obras duplicadas';b.dataset.duplicateTab='1';
-const first=nav.querySelector('button');
-if(first)first.insertAdjacentElement('afterend',b);else nav.append(b);
-const panel=document.createElement('div');
-panel.id='nip-tab-duplicadas';panel.className='nip-tab nip-hidden';
-main.append(panel);
-panel.innerHTML=`
-<section class="nip-box">
- <div class="nd-head"><h2>OBRAS DUPLICADAS — Saneamento e Levantamento</h2><span class="nd-pill">Cruzamento pelo número da nota</span></div>
- <p class="nd-note">Obras identificadas simultaneamente na BASE_SANEAMENTO_ATUALIZADA e na BASE_LEVANTAMENTO_ATUALIZADA. Os status LIST, SAP e SISCO são exibidos conforme os campos disponíveis no registro consolidado; campos ausentes não são presumidos.</p>
- <div class="nd-kpis" id="ndMetrics"></div>
- <div class="nd-filters">
-  <label>Pesquisar nota, cliente ou SISCO<input id="ndSearch" placeholder="Digite para pesquisar"></label>
-  <label>Regional<select id="ndRegional"></select></label>
-  <label>Município<select id="ndCity"></select></label>
-  <label>Status LIST<select id="ndList"></select></label>
-  <label>Status SAP<select id="ndSap"></select></label>
-  <label>Status SISCO<select id="ndSisco"></select></label>
- </div>
- <div class="nd-actions"><button type="button" id="ndReset" class="nd-secondary">Limpar filtros</button><button type="button" id="ndCsv">Exportar CSV filtrado</button><span class="nd-note" id="ndCount"></span></div>
- <div class="nd-scroll"><table><thead><tr><th>Nota / protocolo</th><th>ID SISCO</th><th>Regional</th><th>Município</th><th>Cliente</th><th>Status LIST</th><th>Status SAP</th><th>Status SISCO</th><th>Origem</th></tr></thead><tbody id="ndRows"></tbody></table></div>
- <div class="nd-actions"><button type="button" class="nd-secondary" id="ndMore">Carregar mais 100</button><span class="nd-note" id="ndShown"></span></div>
-</section>`;
-const get=id=>document.getElementById(id);
-const safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const raw=(r,k)=>String(r[k]??'').trim();
-const shown=v=>v===''?'Não informado':v;
-const number=n=>n.toLocaleString('pt-BR');
-const duplicates=()=>typeof DATA==='undefined'?[]:DATA.filter(r=>r.BASE_DUPLICADA===true||r.BASE_DUPLICADA==='true');
-let selected=[],limit=100;
-const fields=[['ndRegional','REGIONAL'],['ndCity','MUNICIPIO'],['ndList','STATUS LIST'],['ndSap','STATUS SAP'],['ndSisco','STATUS SISCO']];
-function fillOptions(){
- const rows=duplicates();
- for(const [id,key] of fields){
-  const el=get(id),prev=el.value;
-  const values=[...new Set(rows.map(r=>raw(r,key)))].sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}));
-  el.innerHTML='<option value="">Todos</option>'+values.map(v=>`<option value="${safe(v)}">${safe(shown(v))}</option>`).join('');
-  if(values.includes(prev))el.value=prev;
- }
-}
-function filtered(){
- const q=get('ndSearch').value.trim().toLocaleLowerCase('pt-BR');
- return duplicates().filter(r=>{
-  if(q&&!['PROTOCOLO','ID SISCO','NOME','MUNICIPIO','ENDEREÇO'].some(k=>raw(r,k).toLocaleLowerCase('pt-BR').includes(q)))return false;
-  return fields.every(([id,key])=>get(id).value===''||raw(r,key)===get(id).value);
- });
-}
-function draw(){
- selected=filtered();
- const total=duplicates().length;
- get('ndMetrics').innerHTML=[
-  ['Duplicadas nas duas bases',total],['Obras filtradas',selected.length],
-  ['Com status LIST',selected.filter(r=>raw(r,'STATUS LIST')&&!raw(r,'STATUS LIST').startsWith('SEM STATUS')).length],
-  ['Com status SISCO',selected.filter(r=>raw(r,'STATUS SISCO')).length]
- ].map(([label,value])=>`<div class="nd-kpi"><small>${safe(label)}</small><strong>${number(value)}</strong></div>`).join('');
- get('ndCount').textContent=`${number(selected.length)} obras correspondem aos filtros`;
- get('ndRows').innerHTML=selected.slice(0,limit).map(r=>'<tr>'+
- ['PROTOCOLO','ID SISCO','REGIONAL','MUNICIPIO','NOME','STATUS LIST','STATUS SAP','STATUS SISCO','ORIGEM_BASE'].map(k=>`<td>${safe(shown(raw(r,k)))}</td>`).join('')+'</tr>').join('')||'<tr><td colspan="9">Nenhuma obra duplicada corresponde aos filtros.</td></tr>';
- get('ndShown').textContent=`Exibindo ${number(Math.min(limit,selected.length))} de ${number(selected.length)}`;
- get('ndMore').hidden=limit>=selected.length;
-}
-function open(){
- document.querySelectorAll('.nip-tab').forEach(p=>p.classList.add('nip-hidden'));
- panel.classList.remove('nip-hidden');
- nav.querySelectorAll('button').forEach(x=>x.classList.remove('selected'));
- b.classList.add('selected');
- fillOptions();limit=100;draw();
-}
-// Captura apenas o clique da nova aba para nao interferir nos controladores originais.
-nav.addEventListener('click',e=>{
- const btn=e.target.closest('button');
- if(!btn)return;
- if(btn===b){e.stopImmediatePropagation();open();}
- else{panel.classList.add('nip-hidden');b.classList.remove('selected');}
-},true);
-for(const [id] of fields)get(id).addEventListener('change',()=>{limit=100;draw()});
-get('ndSearch').addEventListener('input',()=>{limit=100;draw()});
-get('ndReset').onclick=()=>{get('ndSearch').value='';for(const [id] of fields)get(id).value='';limit=100;draw()};
-get('ndMore').onclick=()=>{limit+=100;draw()};
-get('ndCsv').onclick=()=>{
- const keys=['PROTOCOLO','ID SISCO','REGIONAL','MUNICIPIO','NOME','STATUS LIST','STATUS SAP','STATUS SISCO','ORIGEM_BASE'];
- const rows=[keys,...selected.map(r=>keys.map(k=>raw(r,k)))];
- const csv='\ufeff'+rows.map(cols=>cols.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
- const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
- const a=document.createElement('a');a.href=url;a.download='nip_obras_duplicadas_filtradas.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
-};
-})();
-</script>
-</body></html>`);w.document.close();w.focus();setTimeout(()=>w.print(),500)};
+<\/script></body></html>`);w.document.close();w.focus();setTimeout(()=>w.print(),500)};
 function findNotes(){let q=$n('nipSearch').value.trim().toUpperCase();if(!q){$n('nipFound').textContent='Informe uma nota ou SGO.';return}let rows=DATA.filter(r=>[r.PROTOCOLO,r['ID SISCO'],r.SGO,r['Nº SGO'],r['N° SGO'],r['NÚMERO SGO']].some(v=>v!==undefined&&String(v).toUpperCase().includes(q))).slice(0,50);$n('nipFound').innerHTML=rows.length?`${rows.length} resultado(s) encontrados. `+rows.slice(0,8).map((r,i)=>`<button type="button" data-find="${i}">${t(r.PROTOCOLO||r['ID SISCO'])} · ${t(r.MUNICIPIO)}</button>`).join(' '):'Nenhuma nota encontrada. O campo SGO pode não existir na base.';window.nipFoundRows=rows;}
 $n('nipGo').onclick=findNotes;$n('nipSearch').addEventListener('keydown',e=>{if(e.key==='Enter')findNotes()});$n('nipFound').addEventListener('click',e=>{let b=e.target.closest('[data-find]');if(b)goToNote(window.nipFoundRows[Number(b.dataset.find)])});
 function renderExtras(){let os=renderAges();renderRedis(os);renderHeat(os);renderQuality();$n('nipReportInfo').textContent=`Referência ${new Date().toLocaleDateString('pt-BR')} · ${fmtN(CURRENT.length)} registros filtrados · ${fmtN(os.length)} elegíveis.`}
@@ -2047,4 +1928,122 @@ nav.addEventListener('click',e=>{
 });
 el('crBatchAdd').onclick=crAddBatch;el('crBatchZip').onclick=crExportBatch;el('crBatchClear').onclick=()=>{crBatch.length=0;crList()};el('crAdd').onclick=addExtra;el('crGenerate').onclick=generate;el('crKml').onclick=kml;el('crPng').onclick=png;el('crPrint').onclick=()=>window.print();el('crTiles').onchange=()=>{initMap();if(el('crTiles').value==='hybrid')tiles.road.addTo(map);else map.removeLayer(tiles.road)};addExtra();addExtra();
 })();
-</script></body></html>
+</script><style id="nip-duplicadas-aba-estilos">
+/* Estilos limitados exclusivamente a nova aba. O restante do layout nao muda. */
+#nipNav button[data-duplicate-tab="1"]{display:inline-flex!important;align-items:center}
+#nip-tab-duplicadas .nd-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#nip-tab-duplicadas .nd-head h2{margin:0}
+#nip-tab-duplicadas .nd-kpis{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:9px;margin:12px 0}
+#nip-tab-duplicadas .nd-kpi{background:white;border-radius:6px;padding:12px;border-bottom:3px solid #087b89}
+#nip-tab-duplicadas .nd-kpi small{display:block;color:#577085;font-size:11px}
+#nip-tab-duplicadas .nd-kpi strong{font-size:22px;color:#123a55}
+#nip-tab-duplicadas .nd-filters{display:grid;grid-template-columns:repeat(3,minmax(170px,1fr));gap:10px;margin:14px 0}
+#nip-tab-duplicadas .nd-filters label{font-size:12px;font-weight:600;color:#173c54}
+#nip-tab-duplicadas .nd-filters input,#nip-tab-duplicadas .nd-filters select{display:block;width:100%;margin-top:4px;padding:8px;background:white;border:1px solid #b6cddd;border-radius:5px;color:#163951}
+#nip-tab-duplicadas .nd-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:10px 0}
+#nip-tab-duplicadas .nd-actions button{background:#08788a;color:white;border:0;border-radius:5px;padding:9px 13px;cursor:pointer}
+#nip-tab-duplicadas .nd-actions button.nd-secondary{background:#eff6f9;color:#153e59;border:1px solid #b4cbd9}
+#nip-tab-duplicadas .nd-scroll{overflow:auto;max-height:610px;background:white;border:1px solid #d2e1ea;border-radius:7px}
+#nip-tab-duplicadas table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
+#nip-tab-duplicadas th{position:sticky;top:0;background:#e9f2f7;color:#183e57;text-align:left;padding:10px;z-index:1}
+#nip-tab-duplicadas td{padding:9px 10px;border-top:1px solid #e4edf2;color:#183d56}
+#nip-tab-duplicadas tr:nth-child(even){background:#f7fafc}
+#nip-tab-duplicadas .nd-note{font-size:12px;color:#526f80}
+#nip-tab-duplicadas .nd-pill{border-radius:12px;padding:3px 8px;background:#e5f4f7;color:#0a6472;font-weight:700}
+@media(max-width:850px){#nip-tab-duplicadas .nd-filters{grid-template-columns:repeat(2,minmax(120px,1fr))}#nip-tab-duplicadas .nd-kpis{grid-template-columns:repeat(2,minmax(120px,1fr))}}
+</style>
+<script id="nip-duplicadas-aba-logica">
+(function(){
+'use strict';
+const nav=document.getElementById('nipNav'), main=document.querySelector('main');
+if(!nav||!main)return;
+const b=document.createElement('button');
+b.type='button';b.textContent='Obras duplicadas';b.dataset.duplicateTab='1';
+const first=nav.querySelector('button');
+if(first)first.insertAdjacentElement('afterend',b);else nav.append(b);
+const panel=document.createElement('div');
+panel.id='nip-tab-duplicadas';panel.className='nip-tab nip-hidden';
+main.append(panel);
+panel.innerHTML=`
+<section class="nip-box">
+ <div class="nd-head"><h2>OBRAS DUPLICADAS — Saneamento e Levantamento</h2><span class="nd-pill">Cruzamento pelo número da nota</span></div>
+ <p class="nd-note">Obras identificadas simultaneamente na BASE_SANEAMENTO_ATUALIZADA e na BASE_LEVANTAMENTO_ATUALIZADA. Os status LIST, SAP e SISCO são exibidos conforme os campos disponíveis no registro consolidado; campos ausentes não são presumidos.</p>
+ <div class="nd-kpis" id="ndMetrics"></div>
+ <div class="nd-filters">
+  <label>Pesquisar nota, cliente ou SISCO<input id="ndSearch" placeholder="Digite para pesquisar"></label>
+  <label>Regional<select id="ndRegional"></select></label>
+  <label>Município<select id="ndCity"></select></label>
+  <label>Status LIST<select id="ndList"></select></label>
+  <label>Status SAP<select id="ndSap"></select></label>
+  <label>Status SISCO<select id="ndSisco"></select></label>
+ </div>
+ <div class="nd-actions"><button type="button" id="ndReset" class="nd-secondary">Limpar filtros</button><button type="button" id="ndCsv">Exportar CSV filtrado</button><span class="nd-note" id="ndCount"></span></div>
+ <div class="nd-scroll"><table><thead><tr><th>Nota / protocolo</th><th>ID SISCO</th><th>Regional</th><th>Município</th><th>Cliente</th><th>Status LIST</th><th>Status SAP</th><th>Status SISCO</th><th>Origem</th></tr></thead><tbody id="ndRows"></tbody></table></div>
+ <div class="nd-actions"><button type="button" class="nd-secondary" id="ndMore">Carregar mais 100</button><span class="nd-note" id="ndShown"></span></div>
+</section>`;
+const get=id=>document.getElementById(id);
+const safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const raw=(r,k)=>String(r[k]??'').trim();
+const shown=v=>v===''?'Não informado':v;
+const number=n=>n.toLocaleString('pt-BR');
+const duplicates=()=>typeof DATA==='undefined'?[]:DATA.filter(r=>r.BASE_DUPLICADA===true||r.BASE_DUPLICADA==='true');
+let selected=[],limit=100;
+const fields=[['ndRegional','REGIONAL'],['ndCity','MUNICIPIO'],['ndList','STATUS LIST'],['ndSap','STATUS SAP'],['ndSisco','STATUS SISCO']];
+function fillOptions(){
+ const rows=duplicates();
+ for(const [id,key] of fields){
+  const el=get(id),prev=el.value;
+  const values=[...new Set(rows.map(r=>raw(r,key)))].sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}));
+  el.innerHTML='<option value="">Todos</option>'+values.map(v=>`<option value="${safe(v)}">${safe(shown(v))}</option>`).join('');
+  if(values.includes(prev))el.value=prev;
+ }
+}
+function filtered(){
+ const q=get('ndSearch').value.trim().toLocaleLowerCase('pt-BR');
+ return duplicates().filter(r=>{
+  if(q&&!['PROTOCOLO','ID SISCO','NOME','MUNICIPIO','ENDEREÇO'].some(k=>raw(r,k).toLocaleLowerCase('pt-BR').includes(q)))return false;
+  return fields.every(([id,key])=>get(id).value===''||raw(r,key)===get(id).value);
+ });
+}
+function draw(){
+ selected=filtered();
+ const total=duplicates().length;
+ get('ndMetrics').innerHTML=[
+  ['Duplicadas nas duas bases',total],['Obras filtradas',selected.length],
+  ['Com status LIST',selected.filter(r=>raw(r,'STATUS LIST')&&!raw(r,'STATUS LIST').startsWith('SEM STATUS')).length],
+  ['Com status SISCO',selected.filter(r=>raw(r,'STATUS SISCO')).length]
+ ].map(([label,value])=>`<div class="nd-kpi"><small>${safe(label)}</small><strong>${number(value)}</strong></div>`).join('');
+ get('ndCount').textContent=`${number(selected.length)} obras correspondem aos filtros`;
+ get('ndRows').innerHTML=selected.slice(0,limit).map(r=>'<tr>'+
+ ['PROTOCOLO','ID SISCO','REGIONAL','MUNICIPIO','NOME','STATUS LIST','STATUS SAP','STATUS SISCO','ORIGEM_BASE'].map(k=>`<td>${safe(shown(raw(r,k)))}</td>`).join('')+'</tr>').join('')||'<tr><td colspan="9">Nenhuma obra duplicada corresponde aos filtros.</td></tr>';
+ get('ndShown').textContent=`Exibindo ${number(Math.min(limit,selected.length))} de ${number(selected.length)}`;
+ get('ndMore').hidden=limit>=selected.length;
+}
+function open(){
+ document.querySelectorAll('.nip-tab').forEach(p=>p.classList.add('nip-hidden'));
+ panel.classList.remove('nip-hidden');
+ nav.querySelectorAll('button').forEach(x=>x.classList.remove('selected'));
+ b.classList.add('selected');
+ fillOptions();limit=100;draw();
+}
+// Captura apenas o clique da nova aba para nao interferir nos controladores originais.
+nav.addEventListener('click',e=>{
+ const btn=e.target.closest('button');
+ if(!btn)return;
+ if(btn===b){e.stopImmediatePropagation();open();}
+ else{panel.classList.add('nip-hidden');b.classList.remove('selected');}
+},true);
+for(const [id] of fields)get(id).addEventListener('change',()=>{limit=100;draw()});
+get('ndSearch').addEventListener('input',()=>{limit=100;draw()});
+get('ndReset').onclick=()=>{get('ndSearch').value='';for(const [id] of fields)get(id).value='';limit=100;draw()};
+get('ndMore').onclick=()=>{limit+=100;draw()};
+get('ndCsv').onclick=()=>{
+ const keys=['PROTOCOLO','ID SISCO','REGIONAL','MUNICIPIO','NOME','STATUS LIST','STATUS SAP','STATUS SISCO','ORIGEM_BASE'];
+ const rows=[keys,...selected.map(r=>keys.map(k=>raw(r,k)))];
+ const csv='\ufeff'+rows.map(cols=>cols.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+ const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+ const a=document.createElement('a');a.href=url;a.download='nip_obras_duplicadas_filtradas.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+})();
+</script>
+</body></html>
