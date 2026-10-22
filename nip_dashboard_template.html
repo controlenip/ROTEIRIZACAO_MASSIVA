@@ -1951,6 +1951,15 @@ el('crBatchAdd').onclick=crAddBatch;el('crBatchZip').onclick=crExportBatch;el('c
 #nip-tab-duplicadas .nd-note{font-size:12px;color:#526f80}
 #nip-tab-duplicadas .nd-pill{border-radius:12px;padding:3px 8px;background:#e5f4f7;color:#0a6472;font-weight:700}
 @media(max-width:850px){#nip-tab-duplicadas .nd-filters{grid-template-columns:repeat(2,minmax(120px,1fr))}#nip-tab-duplicadas .nd-kpis{grid-template-columns:repeat(2,minmax(120px,1fr))}}
+
+/* Multisselecao restrita a aba Obras Duplicadas */
+#nip-tab-duplicadas .nd-multi{position:relative;margin-top:4px;font-weight:400}
+#nip-tab-duplicadas .nd-multi-trigger{width:100%;height:29px;display:flex;align-items:center;justify-content:space-between;text-align:left;gap:8px;padding:5px 8px;background:#fff;color:#183d56;border:1px solid #b6cddd;border-radius:5px;cursor:pointer;font-size:12px;overflow:hidden;white-space:nowrap}
+#nip-tab-duplicadas .nd-multi-menu{position:absolute;z-index:9999;top:calc(100% + 3px);left:0;right:0;max-height:230px;overflow:auto;background:white;border:1px solid #b6cddd;border-radius:5px;box-shadow:0 6px 16px #0b2c4629;padding:5px}
+#nip-tab-duplicadas .nd-multi-menu[hidden]{display:none!important}
+#nip-tab-duplicadas .nd-multi-option{display:flex;align-items:center;gap:8px;padding:6px 7px;font-size:12px;font-weight:400;color:#183d56;cursor:pointer}
+#nip-tab-duplicadas .nd-multi-option:hover{background:#eaf3f7}
+#nip-tab-duplicadas .nd-multi-option input{width:14px;height:14px;margin:0;accent-color:#08788a}
 </style>
 <script id="nip-duplicadas-aba-logica">
 (function(){
@@ -1971,11 +1980,11 @@ panel.innerHTML=`
  <div class="nd-kpis" id="ndMetrics"></div>
  <div class="nd-filters">
   <label>Pesquisar nota, cliente ou SISCO<input id="ndSearch" placeholder="Digite para pesquisar"></label>
-  <label>Regional<select id="ndRegional"></select></label>
-  <label>Município<select id="ndCity"></select></label>
-  <label>Status LIST<select id="ndList"></select></label>
-  <label>Status SAP<select id="ndSap"></select></label>
-  <label>Status SISCO<select id="ndSisco"></select></label>
+  <label>Regional<div class="nd-multi" id="ndRegional"><button type="button" class="nd-multi-trigger" aria-expanded="false">Todos <span>▾</span></button><div class="nd-multi-menu" hidden></div></div></label>
+  <label>Município<div class="nd-multi" id="ndCity"><button type="button" class="nd-multi-trigger" aria-expanded="false">Todos <span>▾</span></button><div class="nd-multi-menu" hidden></div></div></label>
+  <label>Status LIST<div class="nd-multi" id="ndList"><button type="button" class="nd-multi-trigger" aria-expanded="false">Todos <span>▾</span></button><div class="nd-multi-menu" hidden></div></div></label>
+  <label>Status SAP<div class="nd-multi" id="ndSap"><button type="button" class="nd-multi-trigger" aria-expanded="false">Todos <span>▾</span></button><div class="nd-multi-menu" hidden></div></div></label>
+  <label>Status SISCO<div class="nd-multi" id="ndSisco"><button type="button" class="nd-multi-trigger" aria-expanded="false">Todos <span>▾</span></button><div class="nd-multi-menu" hidden></div></div></label>
  </div>
  <div class="nd-actions"><button type="button" id="ndReset" class="nd-secondary">Limpar filtros</button><button type="button" id="ndCsv">Exportar CSV filtrado</button><span class="nd-note" id="ndCount"></span></div>
  <div class="nd-scroll"><table><thead><tr><th>Nota / protocolo</th><th>ID SISCO</th><th>Regional</th><th>Município</th><th>Cliente</th><th>Status LIST</th><th>Status SAP</th><th>Status SISCO</th><th>Origem</th></tr></thead><tbody id="ndRows"></tbody></table></div>
@@ -1989,20 +1998,35 @@ const number=n=>n.toLocaleString('pt-BR');
 const duplicates=()=>typeof DATA==='undefined'?[]:DATA.filter(r=>r.BASE_DUPLICADA===true||r.BASE_DUPLICADA==='true');
 let selected=[],limit=100;
 const fields=[['ndRegional','REGIONAL'],['ndCity','MUNICIPIO'],['ndList','STATUS LIST'],['ndSap','STATUS SAP'],['ndSisco','STATUS SISCO']];
+const multiValues = Object.fromEntries(fields.map(([id])=>[id,new Set()]));
 function fillOptions(){
  const rows=duplicates();
  for(const [id,key] of fields){
-  const el=get(id),prev=el.value;
+  const el=get(id), menu=el.querySelector('.nd-multi-menu');
   const values=[...new Set(rows.map(r=>raw(r,key)))].sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}));
-  el.innerHTML='<option value="">Todos</option>'+values.map(v=>`<option value="${safe(v)}">${safe(shown(v))}</option>`).join('');
-  if(values.includes(prev))el.value=prev;
+  const selected=multiValues[id];
+  for(const value of [...selected])if(!values.includes(value))selected.delete(value);
+  menu.replaceChildren();
+  for(const value of values){
+   const label=document.createElement('label');label.className='nd-multi-option';
+   const check=document.createElement('input');check.type='checkbox';check.checked=selected.has(value);check.value=value;
+   check.addEventListener('change',()=>{if(check.checked)selected.add(value);else selected.delete(value);updateMulti(id);limit=100;draw()});
+   const text=document.createElement('span');text.textContent=shown(value);
+   label.append(check,text);menu.append(label);
+  }
+  updateMulti(id);
  }
+}
+function updateMulti(id){
+ const values=multiValues[id],el=get(id),button=el.querySelector('.nd-multi-trigger');
+ const label=values.size===0?'Todos':values.size===1?shown([...values][0]):`${values.size} selecionados`;
+ button.firstChild.textContent=label+' ';
 }
 function filtered(){
  const q=get('ndSearch').value.trim().toLocaleLowerCase('pt-BR');
  return duplicates().filter(r=>{
   if(q&&!['PROTOCOLO','ID SISCO','NOME','MUNICIPIO','ENDEREÇO'].some(k=>raw(r,k).toLocaleLowerCase('pt-BR').includes(q)))return false;
-  return fields.every(([id,key])=>get(id).value===''||raw(r,key)===get(id).value);
+  return fields.every(([id,key])=>multiValues[id].size===0||multiValues[id].has(raw(r,key)));
  });
 }
 function draw(){
@@ -2033,9 +2057,18 @@ nav.addEventListener('click',e=>{
  if(btn===b){e.stopImmediatePropagation();open();}
  else{panel.classList.add('nip-hidden');b.classList.remove('selected');}
 },true);
-for(const [id] of fields)get(id).addEventListener('change',()=>{limit=100;draw()});
+for(const [id] of fields){
+ const el=get(id),button=el.querySelector('.nd-multi-trigger'),menu=el.querySelector('.nd-multi-menu');
+ button.addEventListener('click',e=>{
+  e.stopPropagation();
+  for(const [other] of fields)if(other!==id){get(other).querySelector('.nd-multi-menu').hidden=true;get(other).querySelector('.nd-multi-trigger').setAttribute('aria-expanded','false')}
+  menu.hidden=!menu.hidden;button.setAttribute('aria-expanded',String(!menu.hidden));
+ });
+ menu.addEventListener('click',e=>e.stopPropagation());
+}
+document.addEventListener('click',()=>{for(const [id] of fields){get(id).querySelector('.nd-multi-menu').hidden=true;get(id).querySelector('.nd-multi-trigger').setAttribute('aria-expanded','false')}});
 get('ndSearch').addEventListener('input',()=>{limit=100;draw()});
-get('ndReset').onclick=()=>{get('ndSearch').value='';for(const [id] of fields)get(id).value='';limit=100;draw()};
+get('ndReset').onclick=()=>{get('ndSearch').value='';for(const [id] of fields)multiValues[id].clear();fillOptions();limit=100;draw()};
 get('ndMore').onclick=()=>{limit+=100;draw()};
 get('ndCsv').onclick=()=>{
  const keys=['PROTOCOLO','ID SISCO','REGIONAL','MUNICIPIO','NOME','STATUS LIST','STATUS SAP','STATUS SISCO','ORIGEM_BASE'];
