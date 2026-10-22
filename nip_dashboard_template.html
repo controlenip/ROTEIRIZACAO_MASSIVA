@@ -2089,38 +2089,23 @@ margin:0;cursor:pointer;line-height:normal}
 </style>
 <script id="nip-rota-tab-link">
 (function(){
-  function routeUrl(){
-    // st.components.v1.html roda em iframe de outra origem. Um caminho '/roteirizacao'
-    // isolado aponta para a origem do iframe, NAO para o app Streamlit.
-    // document.referrer e a URL da pagina principal do Streamlit.
-    var ref=document.referrer||'';
-    try{
-      var app=new URL(ref);
-      // Suporta deploy na raiz e em subdiretorios, removendo rotas conhecidas.
-      var path=app.pathname.replace(/\/(?:visao-geral|obras-duplicadas|roteirizacao)\/?$/i,'');
-      app.pathname=path.replace(/\/$/,'')+'/roteirizacao';
-      app.search='';app.hash='';
-      return app.href;
-    }catch(e){return '/roteirizacao';}
-  }
+  // A URL publica do proprio aplicativo: nao depende do referrer do iframe.
+  var ROUTE='https://roteirizacaomassiva.streamlit.app/roteirizacao';
   function init(){
     var nav=document.getElementById('nipNav');
-    if(!nav||nav.querySelector('.nip-route-link'))return;
-    var a=document.createElement('a');
-    a.className='nip-route-link';a.textContent='Roteirização';
-    a.href=routeUrl();a.target='_top';
-    a.addEventListener('click',function(e){
-      // Clique real, abre a rota no aplicativo principal, fora do iframe.
-      var url=routeUrl();a.href=url;
-      if(url==='/roteirizacao'){
-        // Sem URL de origem confiavel: nao redirecionar para a origem errada.
-        e.preventDefault();
-        alert('Nao foi possivel identificar o endereco do aplicativo. Atualize a pagina e tente novamente.');
-      }
-    });
-    var dup=nav.querySelector('[data-duplicate-tab="1"]');
-    if(dup)dup.after(a);else nav.append(a);
-    // A navegacao original usa gap:8px; nenhum margin extra e aplicado.
+    if(!nav)return;
+    var a=nav.querySelector('.nip-route-link');
+    if(!a){
+      a=document.createElement('a');
+      a.className='nip-route-link';
+      a.textContent='Roteirização';
+      var dup=nav.querySelector('[data-duplicate-tab="1"]');
+      if(dup)dup.after(a);else nav.append(a);
+    }
+    a.href=ROUTE;
+    a.target='_top';
+    a.rel='noopener';
+    // Nenhum listener de clique: o navegador faz a navegacao diretamente.
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
   else init();
