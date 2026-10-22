@@ -13,7 +13,9 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import streamlit as st
 import folium
-from folium.plugins import MarkerCluster
+import requests
+import time
+from folium.plugins import MarkerCluster, Fullscreen
 from streamlit_folium import st_folium
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,7 +73,9 @@ def order_route(frame,reverse=False):
 def popup(row):
     # Mesmo conteudo de card no mapa e nos arquivos KML/KMZ.
     cells=''.join(f'<tr><td style="padding:4px 7px;border-bottom:1px solid #e4eaf0"><b>{esc(c)}</b></td><td style="padding:4px 7px;border-bottom:1px solid #e4eaf0">{esc(row.get(c,""))}</td></tr>' for c in COLUMNS)
-    return '<div style="font-family:Arial,sans-serif;min-width:280px;color:#14344b"><b style="color:#087888">NIP | Roteirização</b><br><b>Ordem:</b> '+esc(row.get('ORDEM',''))+'<table style="border-collapse:collapse;width:100%;font-size:12px;margin-top:6px">'+cells+'</table></div>'
+    label='SUPERPONTO' if row.get('SUPER_PONTO') else 'ATENDIMENTO PADRÃO'
+    bg='#f9cd16' if row.get('SUPER_PONTO') else '#123d83'
+    return '<div style="font-family:Arial,sans-serif;min-width:290px;color:#14344b"><b>['+esc(row.get('ORDEM',''))+'] Doc: '+esc(row.get('NOTA',''))+'</b><div style="background:'+bg+';color:white;font-weight:bold;padding:8px;margin:7px 0;border-radius:5px">'+label+'</div><b>Colaborador:</b> '+esc(row.get('COLABORADOR',''))+'<br><b>Distância anterior:</b> '+esc(row.get('DISTANCIA_PONTO_ANTERIOR_KM',0))+' km<table style="border-collapse:collapse;width:100%;font-size:12px;margin-top:6px">'+cells+'</table><div style="margin-top:7px"><a target="_blank" href="https://www.google.com/maps/dir/?api=1&amp;destination='+esc(row.get('LATITUDE_NUM',''))+','+esc(row.get('LONGITUDE_NUM',''))+'">Abrir rota no Google Maps</a></div></div>'
 
 def kml_content(records,title):
     kml=ET.Element('kml',xmlns='http://www.opengis.net/kml/2.2');doc=ET.SubElement(kml,'Document');ET.SubElement(doc,'name').text=title
@@ -79,9 +83,14 @@ def kml_content(records,title):
     for r in records:by[r['COLABORADOR']].append(r)
     for name,rows in by.items():
         folder=ET.SubElement(doc,'Folder');ET.SubElement(folder,'name').text=name or 'SEM COLABORADOR'
-        for r in rows:
-            point=ET.SubElement(folder,'Placemark');ET.SubElement(point,'name').text=f"{r['ORDEM']:03d} | {r['NOTA']}"
-            ET.SubElement(point,'description').text=popup(r)
+        clustered=defaultdict(list)
+        for r in rows:clustered[r.get('SUPER_GRUPO',str(r['NOTA']))].append(r)
+        for group in clustered.values():
+            r=group[0]
+            point=ET.SubElement(folder,'Placemark')
+            ET.SubElement(point,'name').text=(f"[{r['ORDEM']}] SUPER PONTO ({len(group)} obras)" if len(group)>1 else f"{r['ORDEM']:03d} | {r['NOTA']}")
+            desc='<div style="font-family:Arial"><h3>SUPER PONTO ('+str(len(group))+' obras)</h3>'+''.join(popup(item)+'<hr>' for item in group)+'</div>' if len(group)>1 else popup(r)
+            ET.SubElement(point,'description').text=desc
             ET.SubElement(ET.SubElement(point,'Point'),'coordinates').text=f"{r['LONGITUDE_NUM']},{r['LATITUDE_NUM']},0"
         if len(rows)>1:
             line=ET.SubElement(folder,'Placemark');ET.SubElement(line,'name').text='Sequência da rota (linha reta)'
@@ -129,77 +138,171 @@ def export_zip(rows):
             z.writestr(stem+'.kmz',kmz.getvalue())
     return b.getvalue()
 
-st.markdown("""<style>
-[data-testid="stAppViewContainer"]{background:#edf4f8}
-.block-container{max-width:100%;padding-top:0.8rem}
-.nip-route-header{background:#123551;color:white;padding:18px 24px;border-radius:5px;margin-bottom:16px}
-.nip-route-header h2{color:white;margin:0;font-size:23px}
-.nip-route-header small{color:#d5e6f0}
-</style><div class="nip-route-header"><h2>NIP | Roteirização Massiva</h2><small>Roteirização · Lista contínua por colaborador planejado</small></div>""",unsafe_allow_html=True)
-st.page_link('pages/01_visao_geral.py',label='← Visão Geral',icon='🗺️')
-st.markdown('### Roteirização')
-file=next((p for p in [ROOT/'BASE_SANEAMENTO.xlsx',ROOT/'BASE_SANEAMENTO(1).xlsx',ROOT/'BASE_SANEAMENTO_ATUALIZADA.xlsx'] if p.is_file()),None)
-with st.expander('Base de dados',expanded=file is None):
-    if file:st.success(f'Planilha do repositório: {file.name}')
-    up=st.file_uploader('Opcional: selecionar outra BASE_SANEAMENTO.xlsx',type=['xlsx'],key='nip_route_upload')
-if up is None and file is None:
-    st.warning('Coloque BASE_SANEAMENTO.xlsx na raiz do GitHub ou carregue a planilha acima.');st.stop()
-try:
-    raw=up.getvalue() if up else file.read_bytes()
-    df=load_file(raw)
-except Exception as e:st.error(f'Falha na leitura da planilha: {e}');st.stop()
 
+# CONFIGURACAO LOGISTICA — interface da aba, isolada do HTML da Visao Geral.
+st.markdown("""<style>
+[data-testid="stAppViewContainer"]{background:#f5f7fa}
+.block-container{max-width:100%;padding-top:.8rem;padding-bottom:2rem}
+.nip-banner{background:#e4f0ff;color:#145b9a;padding:11px 16px;border-radius:5px;font-size:13px;margin-bottom:15px}
+.nip-result{background:#d8f1dd;border-left:5px solid #19a04a;border-radius:5px;padding:13px;color:#145a2b}
+</style>""",unsafe_allow_html=True)
+st.title('📜 Lista Contínua')
+st.markdown('<div class="nip-banner">💡 Gera uma lista de execução contínua com base na atribuição já existente na planilha de obras. Nenhuma obra é transferida de colaborador.</div>',unsafe_allow_html=True)
+ROOT=Path(__file__).resolve().parents[1]
+
+with st.sidebar:
+    st.markdown('### ⚙️ Configurações Logísticas')
+    with st.expander('Parâmetros de rota',expanded=True):
+        st.success('📦 Modo Contínuo: as obras são organizadas numa lista única por colaborador.')
+        cap=st.number_input('Trava total de obras (0 = sem limite)',min_value=0,max_value=200000,value=0,step=1)
+        start_date=st.date_input('Data base (início)',value=datetime.now().date(),format='DD/MM/YYYY')
+        daily=st.number_input('Meta de obras/dia (cálculo de postes)',min_value=1,max_value=1000,value=4)
+        reverse=st.radio('Sentido do roteamento',['Lógica padrão','Varredura reversa'])=='Varredura reversa'
+        radius=st.slider('Raio Super Ponto (m)',min_value=10,max_value=300,value=50,step=10)
+    with st.expander('Conexão de rede',expanded=True):
+        osrm_url=st.text_input('Endpoint OSRM',value='https://router.project-osrm.org',help='Serviço externo; sujeito a indisponibilidade e limites.')
+        use_roads=st.checkbox('Traçado de ruas real (lento)',value=False)
+        max_calls=st.number_input('Limite de trechos OSRM por execução',min_value=1,max_value=500,value=60)
+
+st.markdown('### 📁 Demandas (Obras e Equipes)')
+st.markdown('<div class="nip-banner">💡 A coluna K — COLABORADOR PLANEJADO — define o responsável. O sistema não redistribui obras.</div>',unsafe_allow_html=True)
+file=next((p for p in [ROOT/'BASE_SANEAMENTO.xlsx',ROOT/'BASE_SANEAMENTO(1).xlsx',ROOT/'BASE_SANEAMENTO_ATUALIZADA.xlsx'] if p.is_file()),None)
+with st.expander('Base de dados',expanded=True):
+    if file:st.caption('Planilha do repositório: '+file.name)
+    up=st.file_uploader('Carregar planilha da Lista Contínua (opcional se estiver no repositório)',type=['xlsx'],key='nip_route_upload')
+if up is None and file is None:
+    st.warning('Adicione BASE_SANEAMENTO.xlsx na raiz do GitHub ou carregue uma planilha.');st.stop()
+try:
+    df=load_file(up.getvalue() if up else file.read_bytes())
+except Exception as e:
+    st.error(f'Falha na leitura da planilha: {e}');st.stop()
+
+st.markdown('### 🌐 Limpeza Geográfica')
 f1,f2,f3,f4=st.columns(4)
-with f1: colaboradores=st.multiselect('Colaborador planejado',sorted(x for x in df['COLABORADOR'].unique() if x),key='route_staff')
-with f2: regionais=st.multiselect('Regional',sorted(x for x in df['REGIONAL'].unique() if x),key='route_region')
-with f3: municipios=st.multiselect('Município',sorted(x for x in df['MUNICIPIO'].unique() if x),key='route_city')
-with f4: status=st.multiselect('Status',sorted(x for x in df['STATUS'].unique() if x),key='route_status')
-query=st.text_input('Pesquisar nota, endereço, bairro ou matrícula',placeholder='Digite para pesquisar...')
+with f1: colaboradores=st.multiselect('Colaborador planejado',sorted(x for x in df['COLABORADOR'].unique() if x))
+with f2: regionais=st.multiselect('Regional',sorted(x for x in df['REGIONAL'].unique() if x))
+with f3: municipios=st.multiselect('Município',sorted(x for x in df['MUNICIPIO'].unique() if x))
+with f4: status=st.multiselect('Status',sorted(x for x in df['STATUS'].unique() if x))
 for key,sel in [('COLABORADOR',colaboradores),('REGIONAL',regionais),('MUNICIPIO',municipios),('STATUS',status)]:
     if sel:df=df[df[key].isin(sel)]
-if query:
-    q=re.escape(query)
-    df=df[df[['NOTA','ENDEREÇO','BAIRRO','MATRICULA']].apply(lambda c:c.str.contains(q,case=False,na=False,regex=True)).any(axis=1)]
+q=st.text_input('Buscar nota, endereço, bairro ou matrícula')
+if q:
+    pattern=re.escape(q)
+    df=df[df[['NOTA','ENDEREÇO','BAIRRO','MATRICULA']].apply(lambda c:c.str.contains(pattern,case=False,na=False,regex=True)).any(axis=1)]
 valid=df[df['VALIDA']].copy();invalid=df[~df['VALIDA']].copy()
+if cap>0:valid=valid.head(cap).copy()
+with st.expander('Configuração de saída — Colunas visíveis',expanded=True):
+    st.caption('NOTA · STATUS · TIPO DEMANDA · MUNICIPIO · REGIONAL · ENDEREÇO · BAIRRO · LATITUDE · LONGITUDE · COLABORADOR · MATRICULA')
+    st.caption('Colaborador obtido da coluna K (COLABORADOR PLANEJADO).')
+if len(invalid):
+    st.warning(f'{len(invalid)} registros não têm coordenadas válidas; não serão roteirizados.')
+    with st.expander('Conferir registros sem coordenadas'):st.dataframe(invalid[COLUMNS],hide_index=True,use_container_width=True)
+if valid.empty:
+    st.info('Nenhuma obra válida selecionada.');st.stop()
+
+# Agrupa pontos num raio aproximado em metros por colaborador, preservando todas as notas.
+def tag_superpoints(rows,meters):
+    from collections import defaultdict
+    by=defaultdict(list)
+    for r in rows:by[r['COLABORADOR']].append(r)
+    super_count=0
+    for _,group in by.items():
+        for i,r in enumerate(group):
+            if r.get('_clustered'):continue
+            same=[x for x in group[i:] if not x.get('_clustered') and haversine(float(r['LATITUDE_NUM']),float(r['LONGITUDE_NUM']),float(x['LATITUDE_NUM']),float(x['LONGITUDE_NUM']))*1000<=meters]
+            group_id=str(r['COLABORADOR'])+'|'+str(i)
+            for x in same:x['_clustered']=True;x['SUPER_PONTO']=len(same)>1;x['SUPER_PONTO_QTD']=len(same);x['SUPER_GRUPO']=group_id
+            if len(same)>1:super_count+=1
+    for r in rows:r.pop('_clustered',None)
+    return super_count
+
+@st.cache_data(show_spinner=False,ttl=3600)
+def osrm_segment(a,b,base):
+    try:
+        base=base.rstrip('/')
+        if not base.startswith(('https://','http://')):return None
+        url=f'{base}/route/v1/driving/{a[1]},{a[0]};{b[1]},{b[0]}'
+        data=requests.get(url,params={'overview':'full','geometries':'geojson','steps':'false'},timeout=7).json()
+        if data.get('code')=='Ok' and data.get('routes'):
+            rt=data['routes'][0]
+            return {'km':round(rt['distance']/1000,3),'points':[[c[1],c[0]] for c in rt['geometry']['coordinates']]}
+    except (requests.RequestException,ValueError,KeyError,TypeError):pass
+    return None
+
+def generate_plan(valid,reverse,radius,use_roads,max_calls,osrm_url):
+    rows=[]
+    for _,group in valid.groupby('COLABORADOR',sort=True,dropna=False):
+        rows.extend(order_route(group,reverse=reverse))
+    n_super=tag_superpoints(rows,radius)
+    paths={};total_km=0;real=0;fallback=0;calls=0
+    by=defaultdict(list)
+    for r in rows:by[r['COLABORADOR']].append(r)
+    for name,group in by.items():
+        pts=[]
+        for i,r in enumerate(group):
+            dest=[float(r['LATITUDE_NUM']),float(r['LONGITUDE_NUM'])]
+            if i==0:pts.append(dest);r['DISTANCIA_PONTO_ANTERIOR_KM']=0;continue
+            origin=[float(group[i-1]['LATITUDE_NUM']),float(group[i-1]['LONGITUDE_NUM'])]
+            road=None
+            if use_roads and calls<max_calls:
+                calls+=1;road=osrm_segment(origin,dest,osrm_url)
+            if road:
+                real+=1;km=road['km'];pts.extend(road['points'][1:])
+            else:
+                fallback+=1;km=round(haversine(*origin,*dest),3);pts.append(dest)
+            r['DISTANCIA_PONTO_ANTERIOR_KM']=km
+            total_km+=km
+        paths[name]=pts
+    return rows,paths,round(total_km,2),n_super,real,fallback
+
+st.divider()
+if st.button('🚀 Iniciar Motor de Roteirização',type='primary',use_container_width=True):
+    with st.spinner('Organizando as obras e consultando o OSRM quando habilitado...'):
+        begin=time.monotonic()
+        rows,paths,km,n_super,real,fallback=generate_plan(valid,reverse,radius,use_roads,int(max_calls),osrm_url)
+        st.session_state['nip_plan']={'rows':rows,'paths':paths,'km':km,'super':n_super,'real':real,'fallback':fallback,'elapsed':time.monotonic()-begin}
+        st.session_state['nip_plan_key']=(len(valid),tuple(valid['NOTA'].head(10)),tuple(colaboradores),tuple(regionais),tuple(municipios),tuple(status),q,cap,reverse,radius,use_roads,max_calls,osrm_url)
+key=(len(valid),tuple(valid['NOTA'].head(10)),tuple(colaboradores),tuple(regionais),tuple(municipios),tuple(status),q,cap,reverse,radius,use_roads,max_calls,osrm_url)
+if st.session_state.get('nip_plan_key')!=key:
+    st.info('Configure os parâmetros e clique em Iniciar Motor de Roteirização.');st.stop()
+plan=st.session_state['nip_plan'];rows=plan['rows'];paths=plan['paths']
+st.markdown('### 🎯 Resultado do Planejamento')
 c1,c2,c3,c4=st.columns(4)
-c1.metric('Obras selecionadas',f'{len(df):,}'.replace(',','.'))
-c2.metric('Colaboradores',valid['COLABORADOR'].replace('',pd.NA).nunique())
-c3.metric('Com coordenadas',f'{len(valid):,}'.replace(',','.'))
-c4.metric('Retidas para correção',f'{len(invalid):,}'.replace(',','.'))
-if not invalid.empty:
-    with st.expander('Obras sem coordenadas válidas'):
-        st.dataframe(invalid[COLUMNS],use_container_width=True,hide_index=True)
-if valid.empty:st.info('Nenhuma obra com coordenadas válidas atende aos filtros.');st.stop()
-col1,col2,col3=st.columns([1,1,1])
-with col1:reverse=st.checkbox('Varredura reversa',value=False)
-with col2:show_routes=st.checkbox('Exibir sequência das rotas',value=True)
-with col3:st.caption('Distâncias em linha reta; não são quilômetros rodoviários.')
-records=[]
-for name,group in valid.groupby('COLABORADOR',sort=True,dropna=False):
-    records.extend(order_route(group,reverse=reverse))
-# Evita executar milhares de marcadores na primeira carga sem necessidade.
-st.markdown('#### Mapa operacional')
-if len(records)>2000:
-    st.info(f'{len(records)} obras selecionadas. O mapa exibe até 2.000 marcadores para preservar desempenho; a exportação contém todas.')
-map_rows=records[:2000]
+c1.metric('🎯 Obras roteirizadas',len(rows))
+c2.metric('👥 Equipes alocadas',len(paths))
+c3.metric('📦 Super pontos',plan['super'])
+c4.metric('🗺️ KM total estimado',f"{plan['km']:.2f} km")
+st.markdown(f'<div class="nip-result"><b>🎉 100% DAS {len(rows)} OBRAS VÁLIDAS ROTEIRIZADAS!</b><br>Organizadas sem modificar a atribuição da coluna K.</div>',unsafe_allow_html=True)
+st.caption(f"Tempo de processamento: {plan['elapsed']:.1f}s · Trechos rodoviários OSRM: {plan['real']} · Trechos em linha reta: {plan['fallback']}. A distância total combina quilômetros rodoviários obtidos e distâncias retas de fallback; não é uma estimativa integral de deslocamento por ruas.")
+st.markdown('### 🗺️ Mapa Operacional')
+if len(rows)>2000:st.info('Mapa limitado aos primeiros 2.000 pontos para desempenho. As exportações incluem todas as obras.')
+visible=rows[:2000]
 mp=folium.Map(location=[valid['LATITUDE_NUM'].mean(),valid['LONGITUDE_NUM'].mean()],zoom_start=7,tiles='OpenStreetMap',control_scale=True)
+folium.TileLayer('CartoDB positron',name='Claro').add_to(mp)
+folium.TileLayer('Esri.WorldImagery',name='Satélite',attr='Esri',overlay=False).add_to(mp)
 cluster=MarkerCluster(name='Obras').add_to(mp)
 colors=['blue','green','purple','orange','red','cadetblue','darkgreen','darkpurple']
-for i,(name,group) in enumerate(pd.DataFrame(map_rows).groupby('COLABORADOR',sort=True)):
-    col=colors[i%len(colors)]
-    pts=[]
+for i,(name,group) in enumerate(pd.DataFrame(visible).groupby('COLABORADOR',sort=True)):
+    color=colors[i%len(colors)]
+    grouped=defaultdict(list)
     for r in group.to_dict('records'):
-        pts.append([float(r['LATITUDE_NUM']),float(r['LONGITUDE_NUM'])])
-        folium.Marker(pts[-1],popup=folium.Popup(popup(r),max_width=400),tooltip=f"{r['ORDEM']} | {r['NOTA']} | {name}",icon=folium.Icon(color=col,icon='info-sign')).add_to(cluster)
-    if show_routes and len(pts)>1:folium.PolyLine(pts,weight=3,opacity=.7,color=col,tooltip=f'Rota: {name} (linha reta)').add_to(mp)
-folium.LayerControl().add_to(mp)
-st_folium(mp,height=560,use_container_width=True,returned_objects=[])
-st.markdown('#### Obras roteirizadas')
-st.dataframe(pd.DataFrame(records).reindex(columns=['ORDEM']+COLUMNS),hide_index=True,use_container_width=True,height=380)
-if st.button('Gerar arquivos de roteirização',type='primary'):
-    with st.spinner('Gerando GPX, KML, KMZ, Excel e TXT por colaborador...'):
-        st.session_state['nip_route_zip']=export_zip(records)
-        st.session_state['nip_route_signature']=(len(records),str(colaboradores),str(regionais),str(municipios),str(status),query,reverse)
-sig=(len(records),str(colaboradores),str(regionais),str(municipios),str(status),query,reverse)
-if st.session_state.get('nip_route_signature')==sig and st.session_state.get('nip_route_zip'):
-    st.download_button('📦 Baixar rotas — ZIP (KMZ, KML, GPX, Excel e TXT)',st.session_state['nip_route_zip'],file_name='NIP_ROTEIRIZACAO_'+datetime.now().strftime('%Y%m%d')+'.zip',mime='application/zip',type='primary')
+        grouped[r.get('SUPER_GRUPO',str(r['NOTA']))].append(r)
+    for grouped_rows in grouped.values():
+        r=grouped_rows[0]
+        multi=len(grouped_rows)>1
+        card=('<div style="font-family:Arial"><b>📦 SUPER PONTO ('+str(len(grouped_rows))+' obras)</b><hr>'+''.join(popup(item)+'<hr>' for item in grouped_rows)+'</div>') if multi else popup(r)
+        folium.Marker([r['LATITUDE_NUM'],r['LONGITUDE_NUM']],popup=folium.Popup(card,max_width=420),tooltip=f"{r['ORDEM']} | {'SUPER PONTO ('+str(len(grouped_rows))+')' if multi else r['NOTA']} | {name}",icon=folium.Icon(color='orange' if multi else color,icon='info-sign')).add_to(cluster)
+    if len(rows)<=2000 and len(paths.get(name,[]))>1:
+        folium.PolyLine(paths[name],color=color,weight=4,opacity=.85,tooltip=f'Rota de {name} (ver aviso de distâncias)').add_to(mp)
+Fullscreen().add_to(mp);folium.LayerControl().add_to(mp)
+st_folium(mp,height=550,use_container_width=True,returned_objects=[])
+st.markdown('### 📊 Dados Tabulares')
+st.dataframe(pd.DataFrame(rows).reindex(columns=['ORDEM']+COLUMNS),use_container_width=True,hide_index=True,height=380)
+st.markdown('### 📦 Exportações')
+if st.button('Preparar KMZ, KML, GPX, Excel e TXT',type='primary'):
+    with st.spinner('Preparando arquivos por colaborador...'):
+        st.session_state['nip_export_blob']=export_zip(rows)
+        st.session_state['nip_export_key']=key
+if st.session_state.get('nip_export_key')==key:
+    st.download_button('⬇️ Baixar pacote completo ZIP',st.session_state['nip_export_blob'],file_name='NIP_LISTA_CONTINUA_'+datetime.now().strftime('%Y%m%d')+'.zip',mime='application/zip')
+st.caption('O KMZ e GPX mantêm a sequência e os cards, mas o traçado exportado entre pontos é reto. A geometria de ruas OSRM, quando consultada, aparece no mapa operacional; não é exportada como rota rodoviária neste pacote.')
