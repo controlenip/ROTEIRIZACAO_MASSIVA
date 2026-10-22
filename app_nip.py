@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent
 PAGES = [
     ("01_visao_geral.py", "Visão Geral", "visao-geral"),
     ("02_obras_duplicadas.py", "Obras Duplicadas", "obras-duplicadas"),
+    ("03_roteirizacao.py", "Roteirização", "roteirizacao"),
 ]
 
 available = [(name, title, path) for name, title, path in PAGES if (ROOT / "pages" / name).is_file()]

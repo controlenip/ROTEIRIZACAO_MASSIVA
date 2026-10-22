@@ -2079,4 +2079,6 @@ get('ndCsv').onclick=()=>{
 };
 })();
 </script>
+<style id="nip-rota-tab-style">#nipNav a.nip-route-link{display:inline-flex!important;align-items:center;justify-content:center;padding:8px 14px;border:1px solid #a8c8dc;border-radius:6px;background:#fff;color:#103954;text-decoration:none;font-size:12px;font-weight:700;margin-left:7px}#nipNav a.nip-route-link:hover{background:#087888;color:#fff}</style>
+<script id="nip-rota-tab-link">(function(){function init(){var nav=document.getElementById('nipNav');if(!nav||nav.querySelector('.nip-route-link'))return;var a=document.createElement('a');a.className='nip-route-link';a.href='/roteirizacao';a.target='_top';a.textContent='Roteirização';var dup=nav.querySelector('[data-duplicate-tab="1"]');if(dup)dup.after(a);else nav.append(a);}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();})();</script>
 </body></html>
